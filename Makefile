@@ -8,6 +8,14 @@ LEDGER_ENABLED ?= true
 BINDIR ?= $(HOME)/go/bin
 SIMAPP = ./utilities/simulation/make
 
+# Docker variables
+DOCKER := $(shell which docker)
+
+DOCKER_IMAGE_NAME = persistenceone/persistencesdk
+DOCKER_TAG_NAME = latest
+DOCKER_CONTAINER_NAME = persistencesdk-container
+DOCKER_CMD ?= "/bin/sh"
+
 export GO111MODULE = on
 
 all: build test
@@ -19,7 +27,7 @@ include utilities/simulation/make/Makefile
 ### Build
 
 build: go.sum
-	@go build -mod=readonly ./...
+	@go build -mod=readonly -o bin/ ./...
 .PHONY: build
 
 ########################################
@@ -133,3 +141,41 @@ test-cover:
 benchmark:
 	@go test -mod=readonly -bench=. $(PACKAGES_NOSIMULATION)
 .PHONY: benchmark
+
+
+# Commands for running docker
+#
+# Run persistenceCore on docker
+# Example Usage:
+#   make docker-build   ## Builds persistenceCore binary in 2 stages, 1st builder 2nd Runner
+#                          Final image only has the compiled persistenceCore binary
+#   make docker-interactive   ## Will start an shell session into the docker container
+#                                Access to persistenceCore binary here
+#       NOTE: To be used for testing only, since the container will be removed after stopping
+#   make docker-run DOCKER_CMD=sleep 10000000 DOCKER_OPTS=-d   ## Will run the container in the background
+#       NOTE: Recommeded to use docker commands directly for long running processes
+#   make docker-clean  # Will clean up the running container, as well as delete the image
+#                        after one is done testing
+docker-build:
+	${DOCKER} build -t ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_NAME} .
+
+docker-build-no-cache:
+	${DOCKER} build -t ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_NAME} . --no-cache
+
+docker-build-push: docker-build
+	${DOCKER} push ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_NAME}
+
+docker-run:
+	${DOCKER} run ${DOCKER_OPTS} --name=${DOCKER_CONTAINER_NAME} ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_NAME} ${DOCKER_CMD}
+
+docker-interactive:
+	${MAKE} docker-run DOCKER_CMD=/bin/sh DOCKER_OPTS="--rm -it"
+
+docker-clean-container:
+	-${DOCKER} stop ${DOCKER_CONTAINER_NAME}
+	-${DOCKER} rm ${DOCKER_CONTAINER_NAME}
+
+docker-clean-image:
+	-${DOCKER} rmi ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_NAME}
+
+docker-clean: docker-clean-container docker-clean-image
